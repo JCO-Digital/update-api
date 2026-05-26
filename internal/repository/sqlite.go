@@ -21,6 +21,11 @@ func NewSQLiteRepository(dbPath string) (*SQLiteRepository, error) {
 		return nil, err
 	}
 
+	// Enable foreign key constraints
+	if _, err := db.Exec("PRAGMA foreign_keys = ON;"); err != nil {
+		return nil, err
+	}
+
 	return &SQLiteRepository{db: db}, nil
 }
 
