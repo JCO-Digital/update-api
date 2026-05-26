@@ -1,0 +1,103 @@
+package repository
+
+import (
+	"database/sql"
+	"os"
+
+	_ "modernc.org/sqlite"
+)
+
+type SQLiteRepository struct {
+	db *sql.DB
+}
+
+func NewSQLiteRepository(dbPath string) (*SQLiteRepository, error) {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := db.Ping(); err != nil {
+		return nil, err
+	}
+
+	return &SQLiteRepository{db: db}, nil
+}
+
+func (r *SQLiteRepository) Close() error {
+	return r.db.Close()
+}
+
+type Plugin struct {
+	Slug   string
+	Name   string
+	Secret string
+	IsPaid bool
+}
+
+type Version struct {
+	ID          int
+	PluginSlug  string
+	Version     string
+	DownloadURL string
+	RequiresWP  string
+	TestedWP    string
+	RequiresPHP string
+	Changelog   string
+	CreatedAt   string
+}
+
+func (r *SQLiteRepository) Migrate(migrationPath string) error {
+	content, err := os.ReadFile(migrationPath)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(string(content))
+	return err
+}
+
+func (r *SQLiteRepository) SavePlugin(p Plugin) error {
+	query := `INSERT OR REPLACE INTO plugins (slug, name, secret, is_paid) VALUES (?, ?, ?, ?)`
+	_, err := r.db.Exec(query, p.Slug, p.Name, p.Secret, p.IsPaid)
+	return err
+}
+
+func (r *SQLiteRepository) GetPlugin(slug string) (*Plugin, error) {
+	query := `SELECT slug, name, secret, is_paid FROM plugins WHERE slug = ?`
+	row := r.db.QueryRow(query, slug)
+	var p Plugin
+	if err := row.Scan(&p.Slug, &p.Name, &p.Secret, &p.IsPaid); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (r *SQLiteRepository) SaveVersion(v Version) error {
+	query := `INSERT INTO versions (plugin_slug, version, download_url, requires_wp, tested_wp, requires_php, changelog)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`
+	_, err := r.db.Exec(query, v.PluginSlug, v.Version, v.DownloadURL, v.RequiresWP, v.TestedWP, v.RequiresPHP, v.Changelog)
+	return err
+}
+
+func (r *SQLiteRepository) GetLatestVersion(slug string) (*Version, error) {
+	// We'll return the version with the highest ID for now,
+	// assuming they are inserted in order.
+	// A better way would be using SemVer sorting in Go if needed,
+	// but usually the last one inserted is the latest.
+	query := `SELECT id, plugin_slug, version, download_url, requires_wp, tested_wp, requires_php, changelog, created_at
+              FROM versions WHERE plugin_slug = ? ORDER BY id DESC LIMIT 1`
+	row := r.db.QueryRow(query, slug)
+	var v Version
+	err := row.Scan(&v.ID, &v.PluginSlug, &v.Version, &v.DownloadURL, &v.RequiresWP, &v.TestedWP, &v.RequiresPHP, &v.Changelog, &v.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &v, nil
+}
