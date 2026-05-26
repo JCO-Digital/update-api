@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 	"update-api/internal/api"
 	"update-api/internal/config"
 	"update-api/internal/repository"
@@ -44,7 +45,17 @@ func main() {
 
 	log.Printf("Server starting on port %d", cfg.Server.Port)
 	addr := ":" + strconv.Itoa(cfg.Server.Port)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Fatal: server failed: %v", err)
 	}
 }
