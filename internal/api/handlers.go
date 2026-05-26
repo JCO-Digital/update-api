@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 	"update-api/internal/auth"
 	"update-api/internal/repository"
@@ -11,11 +13,16 @@ import (
 )
 
 type Handler struct {
-	repo *repository.SQLiteRepository
+	repo         *repository.SQLiteRepository
+	rateLimitMu  sync.Mutex
+	rateLimitMap map[string][]time.Time
 }
 
 func NewHandler(repo *repository.SQLiteRepository) *Handler {
-	return &Handler{repo: repo}
+	return &Handler{
+		repo:         repo,
+		rateLimitMap: make(map[string][]time.Time),
+	}
 }
 
 // Admin handlers
@@ -27,8 +34,8 @@ func (h *Handler) HandlePostPlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if p.Slug == "" || p.Name == "" || p.Secret == "" {
-		http.Error(w, "slug, name, and secret are required", http.StatusBadRequest)
+	if p.Slug == "" || p.Name == "" {
+		http.Error(w, "slug and name are required", http.StatusBadRequest)
 		return
 	}
 
@@ -92,6 +99,11 @@ func (h *Handler) HandleGenerateLicense(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if p.Secret == "" {
+		http.Error(w, "plugin does not have a secret configured, license generation disabled", http.StatusForbidden)
+		return
+	}
+
 	key, err := auth.GenerateLicenseKey(p.Slug, req.ClientID, time.Unix(req.ExpiresAt, 0), p.Secret)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -102,6 +114,68 @@ func (h *Handler) HandleGenerateLicense(w http.ResponseWriter, r *http.Request) 
 }
 
 // Public handlers
+
+func (h *Handler) HandleValidateLicense(w http.ResponseWriter, r *http.Request) {
+	// Rate limiting by IP
+	ip := strings.Split(r.RemoteAddr, ":")[0]
+	h.rateLimitMu.Lock()
+	now := time.Now()
+	minuteAgo := now.Add(-time.Minute)
+
+	// Clean up old entries
+	var recent []time.Time
+	for _, t := range h.rateLimitMap[ip] {
+		if t.After(minuteAgo) {
+			recent = append(recent, t)
+		}
+	}
+
+	if len(recent) >= 6 {
+		h.rateLimitMu.Unlock()
+		http.Error(w, "rate limit exceeded (6 requests per minute)", http.StatusTooManyRequests)
+		return
+	}
+
+	recent = append(recent, now)
+	h.rateLimitMap[ip] = recent
+	h.rateLimitMu.Unlock()
+
+	var req struct {
+		Slug       string `json:"slug"`
+		LicenseKey string `json:"license_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Slug == "" || req.LicenseKey == "" {
+		http.Error(w, "slug and license_key are required", http.StatusBadRequest)
+		return
+	}
+
+	p, err := h.repo.GetPlugin(req.Slug)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if p == nil {
+		http.Error(w, "plugin not found", http.StatusNotFound)
+		return
+	}
+
+	valid := true
+	if p.Secret == "" {
+		valid = false
+	} else {
+		_, err := auth.ValidateLicenseKey(req.LicenseKey, req.Slug, p.Secret)
+		if err != nil {
+			valid = false
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]bool{"valid": valid})
+}
 
 func (h *Handler) HandleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 	slug := r.URL.Query().Get("slug")

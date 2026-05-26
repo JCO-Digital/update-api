@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS plugins (
     slug TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    secret TEXT NOT NULL,
+    secret TEXT,
     is_paid BOOLEAN NOT NULL DEFAULT 0
 );
 

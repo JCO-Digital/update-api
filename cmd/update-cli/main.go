@@ -61,17 +61,17 @@ func handlePlugin(repo *repository.SQLiteRepository) {
 	pluginCmd := flag.NewFlagSet("plugin", flag.ExitOnError)
 	slug := pluginCmd.String("slug", "", "Plugin slug (required)")
 	name := pluginCmd.String("name", "", "Plugin display name (required)")
-	secret := pluginCmd.String("secret", "", "HMAC secret for licenses (required)")
+	secret := pluginCmd.String("secret", "", "HMAC secret for licenses (optional)")
 	paid := pluginCmd.Bool("paid", false, "Whether it's a paid plugin")
 
 	if len(os.Args) < 3 || os.Args[2] != "add" {
-		fmt.Println("Usage: update-cli plugin add --slug <slug> --name <name> --secret <secret> [--paid]")
+		fmt.Println("Usage: update-cli plugin add --slug <slug> --name <name> [--secret <secret>] [--paid]")
 		os.Exit(1)
 	}
 
 	pluginCmd.Parse(os.Args[3:])
 
-	if *slug == "" || *name == "" || *secret == "" {
+	if *slug == "" || *name == "" {
 		pluginCmd.Usage()
 		os.Exit(1)
 	}

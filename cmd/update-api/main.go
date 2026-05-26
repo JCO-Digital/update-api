@@ -37,6 +37,7 @@ func main() {
 
 	// Public routes
 	mux.HandleFunc("/v1/update-check", h.HandleUpdateCheck)
+	mux.HandleFunc("/v1/licenses/validate", h.HandleValidateLicense)
 
 	// Admin routes
 	mux.Handle("/v1/plugins", adminAuth(http.HandlerFunc(h.HandlePostPlugin)))

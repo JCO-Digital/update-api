@@ -73,11 +73,15 @@ func (r *SQLiteRepository) GetPlugin(slug string) (*Plugin, error) {
 	query := `SELECT slug, name, secret, is_paid FROM plugins WHERE slug = ?`
 	row := r.db.QueryRow(query, slug)
 	var p Plugin
-	if err := row.Scan(&p.Slug, &p.Name, &p.Secret, &p.IsPaid); err != nil {
+	var secret sql.NullString
+	if err := row.Scan(&p.Slug, &p.Name, &secret, &p.IsPaid); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, err
+	}
+	if secret.Valid {
+		p.Secret = secret.String
 	}
 	return &p, nil
 }
