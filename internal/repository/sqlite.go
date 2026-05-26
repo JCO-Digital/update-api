@@ -29,22 +29,22 @@ func (r *SQLiteRepository) Close() error {
 }
 
 type Plugin struct {
-	Slug   string
-	Name   string
-	Secret string
-	IsPaid bool
+	Slug   string `json:"slug"`
+	Name   string `json:"name"`
+	Secret string `json:"secret"`
+	IsPaid bool   `json:"is_paid"`
 }
 
 type Version struct {
-	ID          int
-	PluginSlug  string
-	Version     string
-	DownloadURL string
-	RequiresWP  string
-	TestedWP    string
-	RequiresPHP string
-	Changelog   string
-	CreatedAt   string
+	ID          int    `json:"id"`
+	PluginSlug  string `json:"slug"`
+	Version     string `json:"version"`
+	DownloadURL string `json:"download_url"`
+	RequiresWP  string `json:"requires_wp"`
+	TestedWP    string `json:"tested_wp"`
+	RequiresPHP string `json:"requires_php"`
+	Changelog   string `json:"changelog"`
+	CreatedAt   string `json:"created_at"`
 }
 
 func (r *SQLiteRepository) Migrate(migrationPath string) error {
