@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"net/http"
 )
 
@@ -15,9 +16,8 @@ func AdminAuthMiddleware(adminKeys []string) func(http.Handler) http.Handler {
 
 			authorized := false
 			for _, key := range adminKeys {
-				if key == apiKey {
+				if subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) == 1 {
 					authorized = true
-					break
 				}
 			}
 
