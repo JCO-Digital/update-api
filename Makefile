@@ -1,8 +1,11 @@
 # Makefile for WordPress Plugin Update API
 
+# Directories
+BIN_DIR=bin
+
 # Binary names
-SERVER_BINARY=update-api
-CLI_BINARY=update-cli
+SERVER_BINARY=$(BIN_DIR)/update-api
+CLI_BINARY=$(BIN_DIR)/update-cli
 
 # Build flags
 LDFLAGS=-ldflags="-s -w"
@@ -13,17 +16,20 @@ all: build ## Build both server and cli
 
 build: build-server build-cli ## Build both binaries
 
-build-server: ## Build the API server
+$(BIN_DIR):
+	mkdir -p $(BIN_DIR)
+
+build-server: $(BIN_DIR) ## Build the API server
 	go build $(LDFLAGS) -o $(SERVER_BINARY) ./cmd/update-api
 
-build-cli: ## Build the management CLI
+build-cli: $(BIN_DIR) ## Build the management CLI
 	go build $(LDFLAGS) -o $(CLI_BINARY) ./cmd/update-cli
 
 run: build-server ## Build and run the server
-	./$(SERVER_BINARY)
+	$(SERVER_BINARY)
 
 clean: ## Remove binaries and sqlite database
-	rm -f $(SERVER_BINARY) $(CLI_BINARY) updates.db
+	rm -rf $(BIN_DIR) updates.db
 
 test: ## Run go tests
 	go test ./...
