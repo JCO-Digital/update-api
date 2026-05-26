@@ -1,0 +1,14 @@
+[Unit]
+Description=WordPress Plugin Update API
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/update-api
+ExecStart=/var/www/update-api/update-api
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
