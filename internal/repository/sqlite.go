@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 
+	"github.com/Masterminds/semver/v3"
 	_ "modernc.org/sqlite"
 )
 
@@ -89,20 +90,39 @@ func (r *SQLiteRepository) SaveVersion(v Version) error {
 }
 
 func (r *SQLiteRepository) GetLatestVersion(slug string) (*Version, error) {
-	// We'll return the version with the highest ID for now,
-	// assuming they are inserted in order.
-	// A better way would be using SemVer sorting in Go if needed,
-	// but usually the last one inserted is the latest.
 	query := `SELECT id, plugin_slug, version, download_url, requires_wp, tested_wp, requires_php, changelog, created_at
-              FROM versions WHERE plugin_slug = ? ORDER BY id DESC LIMIT 1`
-	row := r.db.QueryRow(query, slug)
-	var v Version
-	err := row.Scan(&v.ID, &v.PluginSlug, &v.Version, &v.DownloadURL, &v.RequiresWP, &v.TestedWP, &v.RequiresPHP, &v.Changelog, &v.CreatedAt)
+              FROM versions WHERE plugin_slug = ?`
+	rows, err := r.db.Query(query, slug)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
 		return nil, err
 	}
-	return &v, nil
+	defer rows.Close()
+
+	var latestVersion *Version
+	var latestSemVer *semver.Version
+
+	for rows.Next() {
+		var v Version
+		err := rows.Scan(&v.ID, &v.PluginSlug, &v.Version, &v.DownloadURL, &v.RequiresWP, &v.TestedWP, &v.RequiresPHP, &v.Changelog, &v.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		currentSemVer, err := semver.NewVersion(v.Version)
+		if err != nil {
+			// Skip invalid semver versions in DB
+			continue
+		}
+
+		if latestSemVer == nil || currentSemVer.GreaterThan(latestSemVer) {
+			latestSemVer = currentSemVer
+			latestVersion = &v
+		}
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return latestVersion, nil
 }
