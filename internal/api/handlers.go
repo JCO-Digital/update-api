@@ -77,6 +77,11 @@ func (h *Handler) HandleGenerateLicense(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if req.Slug == "" || req.ClientID == "" || req.ExpiresAt <= time.Now().Unix() {
+		http.Error(w, "slug, client_id, and a future expires_at are required", http.StatusBadRequest)
+		return
+	}
+
 	p, err := h.repo.GetPlugin(req.Slug)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
