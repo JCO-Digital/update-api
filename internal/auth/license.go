@@ -45,14 +45,20 @@ func ValidateLicenseKey(key, slug, secret string) (*LicensePayload, error) {
 	}
 
 	payloadBase64 := parts[0]
-	signature := parts[1]
+	signatureBase64 := parts[1]
+
+	// Decode signature
+	signature, err := base64.StdEncoding.DecodeString(signatureBase64)
+	if err != nil {
+		return nil, errors.New("invalid signature encoding")
+	}
 
 	// Verify signature
 	h := hmac.New(sha256.New, []byte(secret))
 	h.Write([]byte(payloadBase64))
-	expectedSignature := base64.StdEncoding.EncodeToString(h.Sum(nil))
+	expectedSignature := h.Sum(nil)
 
-	if signature != expectedSignature {
+	if !hmac.Equal(signature, expectedSignature) {
 		return nil, errors.New("invalid license signature")
 	}
 
