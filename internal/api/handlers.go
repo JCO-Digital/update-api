@@ -110,6 +110,10 @@ func (h *Handler) HandleGenerateLicense(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Log license creation
+	ip := strings.Split(r.RemoteAddr, ":")[0]
+	auth.LogLicenseCreated(key, req.ClientID, time.Unix(req.ExpiresAt, 0), auth.AnonymizeIP(ip))
+
 	json.NewEncoder(w).Encode(map[string]string{"license_key": key})
 }
 
@@ -172,6 +176,10 @@ func (h *Handler) HandleValidateLicense(w http.ResponseWriter, r *http.Request) 
 		if err != nil {
 			valid = false
 		}
+	}
+
+	if valid {
+		auth.LogLicenseValidated(req.LicenseKey, auth.AnonymizeIP(ip))
 	}
 
 	json.NewEncoder(w).Encode(map[string]bool{"valid": valid})

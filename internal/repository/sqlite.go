@@ -93,6 +93,50 @@ func (r *SQLiteRepository) SaveVersion(v Version) error {
 	return err
 }
 
+func (r *SQLiteRepository) ListPlugins() ([]Plugin, error) {
+	query := `SELECT slug, name, secret, is_paid FROM plugins ORDER BY slug`
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var plugins []Plugin
+	for rows.Next() {
+		var p Plugin
+		var secret sql.NullString
+		if err := rows.Scan(&p.Slug, &p.Name, &secret, &p.IsPaid); err != nil {
+			return nil, err
+		}
+		if secret.Valid {
+			p.Secret = secret.String
+		}
+		plugins = append(plugins, p)
+	}
+	return plugins, rows.Err()
+}
+
+func (r *SQLiteRepository) ListVersions(slug string) ([]Version, error) {
+	query := `SELECT id, plugin_slug, version, download_url, requires_wp, tested_wp, requires_php, changelog, created_at
+              FROM versions WHERE plugin_slug = ? ORDER BY id DESC`
+	rows, err := r.db.Query(query, slug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var versions []Version
+	for rows.Next() {
+		var v Version
+		err := rows.Scan(&v.ID, &v.PluginSlug, &v.Version, &v.DownloadURL, &v.RequiresWP, &v.TestedWP, &v.RequiresPHP, &v.Changelog, &v.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, rows.Err()
+}
+
 func (r *SQLiteRepository) GetLatestVersion(slug string) (*Version, error) {
 	query := `SELECT id, plugin_slug, version, download_url, requires_wp, tested_wp, requires_php, changelog, created_at
               FROM versions WHERE plugin_slug = ?`

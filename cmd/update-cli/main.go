@@ -43,6 +43,8 @@ func main() {
 		handleVersion(repo)
 	case "license":
 		handleLicense(repo)
+	case "list":
+		handleList(repo)
 	default:
 		printUsage()
 		os.Exit(1)
@@ -55,6 +57,8 @@ func printUsage() {
 	fmt.Println("  plugin add    Add or update a plugin")
 	fmt.Println("  version add   Add a new version for a plugin")
 	fmt.Println("  license gen   Generate a license key")
+	fmt.Println("  list plugins  List all plugins")
+	fmt.Println("  list versions List versions for a plugin")
 }
 
 func handlePlugin(repo *repository.SQLiteRepository) {
@@ -157,7 +161,56 @@ func handleLicense(repo *repository.SQLiteRepository) {
 		log.Fatalf("Error generating key: %v", err)
 	}
 
+	// Log license creation
+	auth.LogLicenseCreated(key, *cid, expires, "cli")
+
 	fmt.Printf("\nLicense Key for %s (Client: %s):\n", *slug, *cid)
 	fmt.Printf("Expires: %s\n", expires.Format("2006-01-02"))
 	fmt.Printf("\n%s\n\n", key)
+}
+
+func handleList(repo *repository.SQLiteRepository) {
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: update-cli list <plugins|versions> [options]")
+		os.Exit(1)
+	}
+
+	switch os.Args[2] {
+	case "plugins":
+		plugins, err := repo.ListPlugins()
+		if err != nil {
+			log.Fatalf("Error listing plugins: %v", err)
+		}
+		fmt.Printf("%-20s %-20s %-10s %-5s\n", "SLUG", "NAME", "SECRET", "PAID")
+		fmt.Println("------------------------------------------------------------")
+		for _, p := range plugins {
+			hasSecret := "No"
+			if p.Secret != "" {
+				hasSecret = "Yes"
+			}
+			fmt.Printf("%-20s %-20s %-10s %-5t\n", p.Slug, p.Name, hasSecret, p.IsPaid)
+		}
+	case "versions":
+		listVerCmd := flag.NewFlagSet("list versions", flag.ExitOnError)
+		slug := listVerCmd.String("slug", "", "Plugin slug (required)")
+		listVerCmd.Parse(os.Args[3:])
+
+		if *slug == "" {
+			listVerCmd.Usage()
+			os.Exit(1)
+		}
+
+		versions, err := repo.ListVersions(*slug)
+		if err != nil {
+			log.Fatalf("Error listing versions: %v", err)
+		}
+		fmt.Printf("%-10s %-20s %-15s\n", "VERSION", "CREATED AT", "DOWNLOAD URL")
+		fmt.Println("------------------------------------------------------------")
+		for _, v := range versions {
+			fmt.Printf("%-10s %-20s %-15s\n", v.Version, v.CreatedAt, v.DownloadURL)
+		}
+	default:
+		fmt.Println("Usage: update-cli list <plugins|versions> [options]")
+		os.Exit(1)
+	}
 }
