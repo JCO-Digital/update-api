@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -185,10 +186,45 @@ func (h *Handler) HandleValidateLicense(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(map[string]bool{"valid": valid})
 }
 
+type UpdateResponse struct {
+	Slug        string            `json:"slug"`
+	NewVersion  string            `json:"new_version"`
+	URL         string            `json:"url"`
+	Package     string            `json:"package"`
+	Tested      string            `json:"tested"`
+	Requires    string            `json:"requires"`
+	RequiresPHP string            `json:"requires_php"`
+	Sections    map[string]string `json:"sections"`
+}
+
+type GroupedUpdateResponse struct {
+	Patch    *UpdateResponse  `json:"patch"`
+	Minor    *UpdateResponse  `json:"minor"`
+	Major    *UpdateResponse  `json:"major"`
+	Versions []UpdateResponse `json:"versions"`
+}
+
+func formatUpdateResponse(v repository.Version) UpdateResponse {
+	return UpdateResponse{
+		Slug:        v.PluginSlug,
+		NewVersion:  v.Version,
+		URL:         "", // Can be a link to a plugin info page if added
+		Package:     v.DownloadURL,
+		Tested:      v.TestedWP,
+		Requires:    v.RequiresWP,
+		RequiresPHP: v.RequiresPHP,
+		Sections: map[string]string{
+			"changelog": v.Changelog,
+		},
+	}
+}
+
 func (h *Handler) HandleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 	slug := r.URL.Query().Get("slug")
 	currentVersionStr := r.URL.Query().Get("version")
 	licenseKey := r.URL.Query().Get("license_key")
+	channel := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("channel")))
+	allParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("all")))
 
 	if slug == "" || currentVersionStr == "" {
 		http.Error(w, "slug and version are required", http.StatusBadRequest)
@@ -217,44 +253,146 @@ func (h *Handler) HandleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	latest, err := h.repo.GetLatestVersion(slug)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if latest == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
 	currV, err := semver.NewVersion(currentVersionStr)
 	if err != nil {
 		http.Error(w, "invalid current version format", http.StatusBadRequest)
 		return
 	}
 
-	latestV, err := semver.NewVersion(latest.Version)
+	versions, err := h.repo.ListVersions(slug)
 	if err != nil {
-		http.Error(w, "invalid latest version format in database", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if latestV.GreaterThan(currV) {
-		resp := map[string]interface{}{
-			"slug":         latest.PluginSlug,
-			"new_version":  latest.Version,
-			"url":          "", // Can be a link to a plugin info page if we add one
-			"package":      latest.DownloadURL,
-			"tested":       latest.TestedWP,
-			"requires":     latest.RequiresWP,
-			"requires_php": latest.RequiresPHP,
-			"sections": map[string]string{
-				"changelog": latest.Changelog,
-			},
+	type parsedVersion struct {
+		ver    repository.Version
+		semver *semver.Version
+	}
+
+	var newer []parsedVersion
+	for _, v := range versions {
+		sv, err := semver.NewVersion(v.Version)
+		if err != nil {
+			continue
 		}
+		if sv.GreaterThan(currV) {
+			newer = append(newer, parsedVersion{ver: v, semver: sv})
+		}
+	}
+
+	if len(newer) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Sort newer versions descending by semver
+	sort.Slice(newer, func(i, j int) bool {
+		return newer[i].semver.GreaterThan(newer[j].semver)
+	})
+
+	isAll := allParam == "true" || allParam == "1" || channel == "all"
+
+	if isAll {
+		var latestPatch *repository.Version
+		var latestMinor *repository.Version
+		var latestMajor *repository.Version
+
+		for _, item := range newer {
+			sv := item.semver
+			v := item.ver
+
+			// Patch candidate: same Major and Minor as currV
+			if sv.Major() == currV.Major() && sv.Minor() == currV.Minor() {
+				if latestPatch == nil {
+					verCopy := v
+					latestPatch = &verCopy
+				}
+			}
+
+			// Minor candidate: same Major, but higher Minor than currV
+			if sv.Major() == currV.Major() && sv.Minor() > currV.Minor() {
+				if latestMinor == nil {
+					verCopy := v
+					latestMinor = &verCopy
+				}
+			}
+
+			// Major candidate: higher Major than currV
+			if sv.Major() > currV.Major() {
+				if latestMajor == nil {
+					verCopy := v
+					latestMajor = &verCopy
+				}
+			}
+		}
+
+		allRespVersions := make([]UpdateResponse, len(newer))
+		for i, item := range newer {
+			allRespVersions[i] = formatUpdateResponse(item.ver)
+		}
+
+		var patchResp *UpdateResponse
+		if latestPatch != nil {
+			r := formatUpdateResponse(*latestPatch)
+			patchResp = &r
+		}
+		var minorResp *UpdateResponse
+		if latestMinor != nil {
+			r := formatUpdateResponse(*latestMinor)
+			minorResp = &r
+		}
+		var majorResp *UpdateResponse
+		if latestMajor != nil {
+			r := formatUpdateResponse(*latestMajor)
+			majorResp = &r
+		}
+
+		resp := GroupedUpdateResponse{
+			Patch:    patchResp,
+			Minor:    minorResp,
+			Major:    majorResp,
+			Versions: allRespVersions,
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
-	} else {
-		w.WriteHeader(http.StatusNoContent)
+		return
 	}
+
+	// Single version response based on channel
+	var target *repository.Version
+	switch channel {
+	case "patch":
+		// Highest version where Major and Minor match currV
+		for _, item := range newer {
+			if item.semver.Major() == currV.Major() && item.semver.Minor() == currV.Minor() {
+				v := item.ver
+				target = &v
+				break
+			}
+		}
+	case "minor":
+		// Highest version in current major stream (Major matches currV)
+		for _, item := range newer {
+			if item.semver.Major() == currV.Major() {
+				v := item.ver
+				target = &v
+				break
+			}
+		}
+	default: // "major" or unspecified
+		// Highest version overall
+		v := newer[0].ver
+		target = &v
+	}
+
+	if target == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	resp := formatUpdateResponse(*target)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }

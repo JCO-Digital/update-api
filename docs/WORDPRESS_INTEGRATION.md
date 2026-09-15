@@ -14,16 +14,18 @@ class MyPluginUpdater {
     private $current_version;
     private $update_url;
     private $license_key;
+    private $channel; // 'patch', 'minor', 'major', or 'all'
 
-    public function __construct($slug, $version, $update_url, $license_key = '') {
+    public function __construct($slug, $version, $update_url, $license_key = '', $channel = 'major') {
         $this->slug = $slug;
         $this->current_version = $version;
         $this->update_url = $update_url;
         $this->license_key = $license_key;
+        $this->channel = $channel;
 
         // Hook into update checks
         add_filter('pre_set_site_transient_update_plugins', [$this, 'check_update']);
-        
+
         // Hook into plugin details popup
         add_filter('plugins_api', [$this, 'plugin_popup'], 20, 3);
     }
@@ -43,7 +45,7 @@ class MyPluginUpdater {
             $res->tested = $remote->tested;
             $res->package = $remote->package;
             $res->url = $remote->url;
-            
+
             $transient->response[$res->plugin] = $res;
         }
 
@@ -79,7 +81,8 @@ class MyPluginUpdater {
         $url = add_query_arg([
             'slug' => $this->slug,
             'version' => $this->current_version,
-            'license_key' => $this->license_key
+            'license_key' => $this->license_key,
+            'channel' => $this->channel
         ], $this->update_url);
 
         $response = wp_remote_get($url, [
@@ -95,6 +98,6 @@ class MyPluginUpdater {
     }
 }
 
-// Initialize
-new MyPluginUpdater('my-plugin', '1.0.0', 'https://api.example.com/v1/update-check', 'KEY-GOES-HERE');
+// Initialize (channel: 'patch', 'minor', or 'major')
+new MyPluginUpdater('my-plugin', '1.0.0', 'https://api.example.com/v1/update-check', 'KEY-GOES-HERE', 'patch');
 ```

@@ -78,12 +78,65 @@ Called by WordPress plugins to check for newer versions.
 - `slug` (required): The plugin slug.
 - `version` (required): The current installed version.
 - `license_key` (required if plugin is marked `is_paid`).
+- `channel` (optional): `patch` | `minor` | `major` | `all`. Defaults to `major`.
+  - `patch`: Returns the highest patch version matching current Major and Minor (e.g. `1.2.x` for installed `1.2.0`).
+  - `minor`: Returns the highest version in the current Major series (e.g. `1.x.y` for installed `1.2.0`).
+  - `major`: Returns the highest version overall.
+  - `all`: Returns grouped updates and all newer versions (same as `all=true`).
+- `all` (optional): `true` / `1`. Returns all newer versions and grouped patch/minor/major updates.
 
-**Success Response (200 OK):**
-Returns a JSON object compatible with WordPress's `plugins_api` format if a newer version exists.
+**Single Channel Success Response (200 OK):**
+Returns a JSON object compatible with WordPress's `plugins_api` format if a matching update exists:
+
+```json
+{
+	"slug": "my-plugin",
+	"new_version": "1.2.4",
+	"url": "",
+	"package": "https://storage.example.com/files/my-plugin-1.2.4.zip",
+	"tested": "6.5",
+	"requires": "6.0",
+	"requires_php": "7.4",
+	"sections": {
+		"changelog": "<h4>Fixed</h4><ul><li>Bug fixes</li></ul>"
+	}
+}
+```
+
+**Grouped / All Versions Response (200 OK when `all=true` or `channel=all`):**
+
+```json
+{
+	"patch": {
+		"slug": "my-plugin",
+		"new_version": "1.2.4",
+		"package": "https://storage.example.com/files/my-plugin-1.2.4.zip",
+		...
+	},
+	"minor": {
+		"slug": "my-plugin",
+		"new_version": "1.4.3",
+		"package": "https://storage.example.com/files/my-plugin-1.4.3.zip",
+		...
+	},
+	"major": {
+		"slug": "my-plugin",
+		"new_version": "2.0.3",
+		"package": "https://storage.example.com/files/my-plugin-2.0.3.zip",
+		...
+	},
+	"versions": [
+		{ "slug": "my-plugin", "new_version": "2.0.3", ... },
+		{ "slug": "my-plugin", "new_version": "1.4.3", ... },
+		{ "slug": "my-plugin", "new_version": "1.2.4", ... }
+	]
+}
+```
+
+_Note: `patch`, `minor`, or `major` will be `null` if no newer version exists in that specific category._
 
 **No Update (204 No Content):**
-Returned if the installed version is equal to or newer than the latest version.
+Returned if no newer version matching the requested channel/scope exists.
 
 ### Validate License
 
