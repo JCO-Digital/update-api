@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.0 (2026-10-30)
+
+#### Features
+
+- config: add make install and read the config from /etc/update-api (c5c071e)
+
 ## v1.0.0 (2026-10-30)
 
 #### Features
