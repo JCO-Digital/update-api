@@ -14,7 +14,7 @@ Admin endpoints require the `X-API-Key` header. This key must match one of the k
 
 `POST /v1/plugins`
 
-Registers a new plugin or updates existing metadata.
+Registers a new plugin or updates existing metadata. Updating replaces every field, so send the secret and `is_paid` again; the plugin's versions are kept.
 
 **Body:**
 
@@ -31,7 +31,7 @@ Registers a new plugin or updates existing metadata.
 
 `POST /v1/versions`
 
-Pushes a new release to the database. Usually called from GitHub Actions.
+Pushes a new release to the database. Usually called from GitHub Actions. Posting a version the plugin already has updates it instead of adding a duplicate, so re-running a release is safe.
 
 **Body:**
 

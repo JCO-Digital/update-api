@@ -1,13 +1,12 @@
 package repository
 
 import (
-	"os"
+	"path/filepath"
 	"testing"
 )
 
 func TestPluginAndVersionRepository(t *testing.T) {
-	dbPath := "test_updates.db"
-	defer os.Remove(dbPath)
+	dbPath := filepath.Join(t.TempDir(), "test_updates.db")
 
 	repo, err := NewSQLiteRepository(dbPath)
 	if err != nil {
@@ -16,8 +15,7 @@ func TestPluginAndVersionRepository(t *testing.T) {
 	defer repo.Close()
 
 	// Run migration
-	// We use a relative path here assuming test runs from internal/repository
-	err = repo.Migrate("../../migrations/001_initial_schema.sql")
+	err = repo.Migrate()
 	if err != nil {
 		t.Fatalf("Migration failed: %v", err)
 	}

@@ -17,6 +17,7 @@ type Handler struct {
 	repo         *repository.SQLiteRepository
 	rateLimitMu  sync.Mutex
 	rateLimitMap map[string][]time.Time
+	lastSweep    time.Time
 }
 
 func NewHandler(repo *repository.SQLiteRepository) *Handler {
@@ -112,22 +113,32 @@ func (h *Handler) HandleGenerateLicense(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Log license creation
-	ip := strings.Split(r.RemoteAddr, ":")[0]
-	auth.LogLicenseCreated(key, req.ClientID, time.Unix(req.ExpiresAt, 0), auth.AnonymizeIP(ip))
+	auth.LogLicenseCreated(key, req.ClientID, time.Unix(req.ExpiresAt, 0), auth.AnonymizeIP(clientIP(r)))
 
 	json.NewEncoder(w).Encode(map[string]string{"license_key": key})
 }
 
 // Public handlers
 
-func (h *Handler) HandleValidateLicense(w http.ResponseWriter, r *http.Request) {
-	// Rate limiting by IP
-	ip := strings.Split(r.RemoteAddr, ":")[0]
+// allow records a license validation attempt from ip and reports whether it
+// is within 6 per minute.
+func (h *Handler) allow(ip string) bool {
 	h.rateLimitMu.Lock()
+	defer h.rateLimitMu.Unlock()
+
 	now := time.Now()
 	minuteAgo := now.Add(-time.Minute)
 
-	// Clean up old entries
+	// Drop IPs that have gone quiet so the map doesn't grow forever.
+	if now.Sub(h.lastSweep) > time.Minute {
+		for k, times := range h.rateLimitMap {
+			if len(times) == 0 || !times[len(times)-1].After(minuteAgo) {
+				delete(h.rateLimitMap, k)
+			}
+		}
+		h.lastSweep = now
+	}
+
 	var recent []time.Time
 	for _, t := range h.rateLimitMap[ip] {
 		if t.After(minuteAgo) {
@@ -136,14 +147,20 @@ func (h *Handler) HandleValidateLicense(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if len(recent) >= 6 {
-		h.rateLimitMu.Unlock()
+		h.rateLimitMap[ip] = recent
+		return false
+	}
+
+	h.rateLimitMap[ip] = append(recent, now)
+	return true
+}
+
+func (h *Handler) HandleValidateLicense(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	if !h.allow(ip) {
 		http.Error(w, "rate limit exceeded (6 requests per minute)", http.StatusTooManyRequests)
 		return
 	}
-
-	recent = append(recent, now)
-	h.rateLimitMap[ip] = recent
-	h.rateLimitMu.Unlock()
 
 	var req struct {
 		Slug       string `json:"slug"`
@@ -291,108 +308,52 @@ func (h *Handler) HandleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 		return newer[i].semver.GreaterThan(newer[j].semver)
 	})
 
-	isAll := allParam == "true" || allParam == "1" || channel == "all"
-
-	if isAll {
-		var latestPatch *repository.Version
-		var latestMinor *repository.Version
-		var latestMajor *repository.Version
-
+	// highest returns the newest version matching match, or nil.
+	highest := func(match func(sv *semver.Version) bool) *UpdateResponse {
 		for _, item := range newer {
-			sv := item.semver
-			v := item.ver
-
-			// Patch candidate: same Major and Minor as currV
-			if sv.Major() == currV.Major() && sv.Minor() == currV.Minor() {
-				if latestPatch == nil {
-					verCopy := v
-					latestPatch = &verCopy
-				}
-			}
-
-			// Minor candidate: same Major, but higher Minor than currV
-			if sv.Major() == currV.Major() && sv.Minor() > currV.Minor() {
-				if latestMinor == nil {
-					verCopy := v
-					latestMinor = &verCopy
-				}
-			}
-
-			// Major candidate: higher Major than currV
-			if sv.Major() > currV.Major() {
-				if latestMajor == nil {
-					verCopy := v
-					latestMajor = &verCopy
-				}
+			if match(item.semver) {
+				resp := formatUpdateResponse(item.ver)
+				return &resp
 			}
 		}
+		return nil
+	}
+	samePatchLine := func(sv *semver.Version) bool {
+		return sv.Major() == currV.Major() && sv.Minor() == currV.Minor()
+	}
+	sameMajor := func(sv *semver.Version) bool { return sv.Major() == currV.Major() }
 
-		allRespVersions := make([]UpdateResponse, len(newer))
-		for i, item := range newer {
-			allRespVersions[i] = formatUpdateResponse(item.ver)
-		}
+	w.Header().Set("Content-Type", "application/json")
 
-		var patchResp *UpdateResponse
-		if latestPatch != nil {
-			r := formatUpdateResponse(*latestPatch)
-			patchResp = &r
-		}
-		var minorResp *UpdateResponse
-		if latestMinor != nil {
-			r := formatUpdateResponse(*latestMinor)
-			minorResp = &r
-		}
-		var majorResp *UpdateResponse
-		if latestMajor != nil {
-			r := formatUpdateResponse(*latestMajor)
-			majorResp = &r
-		}
-
+	if allParam == "true" || allParam == "1" || channel == "all" {
 		resp := GroupedUpdateResponse{
-			Patch:    patchResp,
-			Minor:    minorResp,
-			Major:    majorResp,
-			Versions: allRespVersions,
+			Patch: highest(samePatchLine),
+			Minor: highest(func(sv *semver.Version) bool { return sameMajor(sv) && sv.Minor() > currV.Minor() }),
+			Major: highest(func(sv *semver.Version) bool { return sv.Major() > currV.Major() }),
 		}
-
-		w.Header().Set("Content-Type", "application/json")
+		for _, item := range newer {
+			resp.Versions = append(resp.Versions, formatUpdateResponse(item.ver))
+		}
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
 
 	// Single version response based on channel
-	var target *repository.Version
+	var target *UpdateResponse
 	switch channel {
 	case "patch":
-		// Highest version where Major and Minor match currV
-		for _, item := range newer {
-			if item.semver.Major() == currV.Major() && item.semver.Minor() == currV.Minor() {
-				v := item.ver
-				target = &v
-				break
-			}
-		}
+		target = highest(samePatchLine)
 	case "minor":
-		// Highest version in current major stream (Major matches currV)
-		for _, item := range newer {
-			if item.semver.Major() == currV.Major() {
-				v := item.ver
-				target = &v
-				break
-			}
-		}
-	default: // "major" or unspecified
-		// Highest version overall
-		v := newer[0].ver
-		target = &v
+		target = highest(sameMajor)
+	default: // "major" or unspecified: highest version overall
+		target = highest(func(*semver.Version) bool { return true })
 	}
 
 	if target == nil {
+		w.Header().Del("Content-Type")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	resp := formatUpdateResponse(*target)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(target)
 }

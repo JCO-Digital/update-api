@@ -21,6 +21,8 @@ go build -o update-cli ./cmd/update-cli
 - `--secret`: A random string used to sign licenses.
 - `--paid`: (Optional) Flag to indicate if license checks are required.
 
+Running this for an existing slug updates the plugin and keeps its versions.
+
 ## Version Management
 
 ### Add a New Version
@@ -39,6 +41,8 @@ go build -o update-cli ./cmd/update-cli
 - `--req-wp`: (Optional) Minimum WP version (default: 6.0).
 - `--test-wp`: (Optional) Tested WP version (default: 6.5).
 
+Adding a version that already exists for the plugin updates it.
+
 ## License Management
 
 ### Generate a License Key
@@ -50,6 +54,30 @@ go build -o update-cli ./cmd/update-cli
 - `--slug`: Plugin slug.
 - `--cid`: Client/Customer ID.
 - `--days`: (Optional) Number of days until expiration (default: 365).
+
+## Backups
+
+### Write a Backup Now
+
+```bash
+./update-cli backup [--dir <dir>]
+```
+
+Writes `updates-<UTC timestamp>.db` to the configured backup directory. The server also does this on its own schedule; see [Deployment](DEPLOYMENT.md#3-backups).
+
+## Importing from GitHub
+
+### Rebuild Plugins and Versions from Releases
+
+```bash
+./update-cli import [--org JCO-Digital] [--topic jcore-plugin] [--dry-run]
+```
+
+For every repository in the organization with the topic, this adds each release that has `<slug>.zip` attached, the same way the release workflow publishes it: the zip URL, the release notes as changelog, and the requirements from the plugin header at that tag. Running it again updates the versions in place rather than duplicating them.
+
+Existing plugins are left as they are. New plugins are created free and without a license secret.
+
+Set `GITHUB_TOKEN` to raise GitHub's API rate limit.
 
 ## Listing Data
 

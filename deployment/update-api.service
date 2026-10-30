@@ -9,6 +9,11 @@ Group=www-data
 WorkingDirectory=/var/www/update-api
 ExecStart=/var/www/update-api/update-api
 Restart=always
+# Creates /var/lib/update-api owned by www-data. With XDG_DATA_HOME=/var/lib
+# the database and backups default to that directory.
+StateDirectory=update-api
+StateDirectoryMode=0750
+Environment=XDG_DATA_HOME=/var/lib
 
 [Install]
 WantedBy=multi-user.target

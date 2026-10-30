@@ -2,7 +2,9 @@ package api
 
 import (
 	"crypto/subtle"
+	"net"
 	"net/http"
+	"strings"
 )
 
 func AdminAuthMiddleware(adminKeys []string) func(http.Handler) http.Handler {
@@ -29,4 +31,20 @@ func AdminAuthMiddleware(adminKeys []string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// clientIP returns the caller's IP. Behind the local nginx proxy every
+// request comes from loopback, so the X-Real-IP header nginx sets is used
+// instead; it is only trusted when the direct peer is loopback.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		if real := strings.TrimSpace(r.Header.Get("X-Real-IP")); real != "" {
+			return real
+		}
+	}
+	return host
 }

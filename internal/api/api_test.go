@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"path/filepath"
 	"testing"
 	"update-api/internal/repository"
 )
 
 func TestHandlers(t *testing.T) {
-	dbPath := "test_api.db"
-	defer os.Remove(dbPath)
+	dbPath := filepath.Join(t.TempDir(), "test_api.db")
 
 	repo, err := repository.NewSQLiteRepository(dbPath)
 	if err != nil {
@@ -20,7 +19,7 @@ func TestHandlers(t *testing.T) {
 	}
 	defer repo.Close()
 
-	err = repo.Migrate("../../migrations/001_initial_schema.sql")
+	err = repo.Migrate()
 	if err != nil {
 		t.Fatalf("Migration failed: %v", err)
 	}

@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+// LogDir is where the license logs are written. Set it from the config at
+// startup.
+var LogDir = "licenses"
+
 func AnonymizeIP(ipStr string) string {
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
@@ -51,8 +55,10 @@ func LogLicenseValidated(code, ip string) error {
 }
 
 func appendToLog(filename, line string) error {
-	dir := "licenses"
-	path := filepath.Join(dir, filename)
+	if err := os.MkdirAll(LogDir, 0o750); err != nil {
+		return err
+	}
+	path := filepath.Join(LogDir, filename)
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {

@@ -1,24 +1,28 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"time"
 	"update-api/internal/auth"
+	"update-api/internal/backup"
 	"update-api/internal/config"
+	"update-api/internal/importer"
 	"update-api/internal/repository"
 )
 
 func main() {
-	cfg, err := config.LoadConfig("config.yaml")
+	cfg, cfgPath, err := config.Load()
 	if err != nil {
-		cfg, err = config.LoadConfig("config.yaml.dist")
-		if err != nil {
-			log.Fatalf("Error loading config: %v", err)
-		}
+		log.Fatalf("Error loading config: %v", err)
 	}
+	for _, msg := range cfg.StrayFiles(cfgPath) {
+		log.Printf("Warning: %s", msg)
+	}
+	auth.LogDir = cfg.Licenses.LogDir
 
 	repo, err := repository.NewSQLiteRepository(cfg.Server.DBPath)
 	if err != nil {
@@ -27,7 +31,7 @@ func main() {
 	defer repo.Close()
 
 	// Ensure tables exist
-	if err := repo.Migrate("migrations/001_initial_schema.sql"); err != nil {
+	if err := repo.Migrate(); err != nil {
 		log.Fatalf("Error running migrations: %v", err)
 	}
 
@@ -45,6 +49,10 @@ func main() {
 		handleLicense(repo)
 	case "list":
 		handleList(repo)
+	case "backup":
+		handleBackup(repo, cfg)
+	case "import":
+		handleImport(repo)
 	default:
 		printUsage()
 		os.Exit(1)
@@ -59,6 +67,8 @@ func printUsage() {
 	fmt.Println("  license gen   Generate a license key")
 	fmt.Println("  list plugins  List all plugins")
 	fmt.Println("  list versions List versions for a plugin")
+	fmt.Println("  backup        Write a database backup now")
+	fmt.Println("  import        Rebuild plugins and versions from GitHub releases")
 }
 
 func handlePlugin(repo *repository.SQLiteRepository) {
@@ -212,5 +222,47 @@ func handleList(repo *repository.SQLiteRepository) {
 	default:
 		fmt.Println("Usage: update-cli list <plugins|versions> [options]")
 		os.Exit(1)
+	}
+}
+
+func handleBackup(repo *repository.SQLiteRepository, cfg *config.Config) {
+	backupCmd := flag.NewFlagSet("backup", flag.ExitOnError)
+	dir := backupCmd.String("dir", cfg.Backup.Dir, "Directory to write the backup to")
+	backupCmd.Parse(os.Args[2:])
+
+	path, err := backup.Snapshot(repo, *dir)
+	if err != nil {
+		log.Fatalf("Backup failed: %v", err)
+	}
+	fmt.Printf("Backup written to %s\n", path)
+}
+
+func handleImport(repo *repository.SQLiteRepository) {
+	importCmd := flag.NewFlagSet("import", flag.ExitOnError)
+	org := importCmd.String("org", "JCO-Digital", "GitHub organization")
+	topic := importCmd.String("topic", "jcore-plugin", "Import repos with this topic")
+	dryRun := importCmd.Bool("dry-run", false, "Show what would be imported without writing")
+	importCmd.Parse(os.Args[2:])
+
+	gh := importer.GitHub{
+		Org:   *org,
+		Topic: *topic,
+		Token: os.Getenv("GITHUB_TOKEN"),
+		Logf: func(format string, args ...any) {
+			fmt.Printf(format+"\n", args...)
+		},
+	}
+	sum, err := gh.Run(context.Background(), repo, *dryRun)
+	if err != nil {
+		log.Fatalf("Import failed: %v", err)
+	}
+
+	if *dryRun {
+		fmt.Printf("\nDry run: %d repos, %d versions would be imported, %d skipped\n", sum.Repos, sum.Versions, sum.Skipped)
+		return
+	}
+	fmt.Printf("\nImported %d versions from %d repos (%d new plugins, %d skipped)\n", sum.Versions, sum.Repos, sum.PluginsCreated, sum.Skipped)
+	if sum.PluginsCreated > 0 {
+		fmt.Println("New plugins are free and have no license secret. Set them with: update-cli plugin add --slug <slug> --name <name> --secret <secret> --paid")
 	}
 }

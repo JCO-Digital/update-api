@@ -1,5 +1,7 @@
 PLAN.md
 config.yaml
 updates.db
+updates.db-*
+backups/
 /bin/
 licenses/

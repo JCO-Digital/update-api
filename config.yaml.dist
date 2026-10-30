@@ -1,7 +1,24 @@
+# Copy to ~/.config/update-api/config.yaml, or /etc/xdg/update-api/config.yaml
+# for a system-wide install.
 server:
   port: 8080
-  db_path: "./updates.db"
+  # Defaults to $XDG_DATA_HOME/update-api/updates.db
+  # (~/.local/share/update-api/updates.db when XDG_DATA_HOME is unset).
+  # db_path: "/var/lib/update-api/updates.db"
 
 auth:
   admin_api_keys:
     - "change-me-to-a-secure-key"
+
+backup:
+  # Snapshots of the database, taken at startup and then every interval.
+  # Copy this directory off the server too; a backup on the same disk does
+  # not survive losing the disk.
+  # Defaults to a backups directory next to the default database.
+  # dir: "/var/lib/update-api/backups"
+  interval: "6h" # "0s" disables backups
+  keep: 28
+
+licenses:
+  # Defaults to a licenses directory next to the default database.
+  # log_dir: "/var/lib/update-api/licenses"
