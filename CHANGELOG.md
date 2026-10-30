@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.1.0
+## v1.0.0 (2026-10-30)
+
+#### Features
+
+- config: back up the database and move files to XDG locations (BREAKING CHANGE) (3f4bd98)
+
+#### Maintenance
+
+- config: add foonver configuration file (c77a4ff)
+
+## v0.1.0 (2026-09-15)
 
 #### Features
 
