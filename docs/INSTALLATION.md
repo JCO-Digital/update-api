@@ -39,7 +39,7 @@ Migrations are embedded in the binary, so only the binary and the config need to
 
 The server and the CLI follow the XDG Base Directory spec and use the same lookup.
 
-**Config:** `$UPDATE_API_CONFIG` if set, otherwise the first `update-api/config.yaml` found in `$XDG_CONFIG_HOME` (default `~/.config`) and then in each directory of `$XDG_CONFIG_DIRS` (default `/etc/xdg`). Without a config file the defaults are used, which have no admin API keys, so the admin endpoints reject every request.
+**Config:** `$UPDATE_API_CONFIG` if set, otherwise the first `update-api/config.yaml` found in `$XDG_CONFIG_HOME` (default `~/.config`) then in each directory of `$XDG_CONFIG_DIRS` (default `/etc/xdg`), and finally `/etc/update-api/config.yaml`. If a config shadows another one further down the list, a warning is logged at startup. Without a config file the defaults are used, which have no admin API keys, so the admin endpoints reject every request.
 
 **Data:** `$XDG_DATA_HOME/update-api/` (default `~/.local/share/update-api/`) holds:
 

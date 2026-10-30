@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -61,6 +62,7 @@ func TestLoadSearchesXDGConfigDirs(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "home"))
 	t.Setenv("XDG_CONFIG_DIRS", "relative:"+filepath.Join(tmp, "etc1")+":"+filepath.Join(tmp, "etc2"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(tmp, "data"))
+	setSystemConfigDir(t, filepath.Join(tmp, "system"))
 
 	paths, err := ConfigPaths()
 	if err != nil {
@@ -70,6 +72,7 @@ func TestLoadSearchesXDGConfigDirs(t *testing.T) {
 		filepath.Join(tmp, "home", "update-api", "config.yaml"),
 		filepath.Join(tmp, "etc1", "update-api", "config.yaml"),
 		filepath.Join(tmp, "etc2", "update-api", "config.yaml"),
+		filepath.Join(tmp, "system", "config.yaml"),
 	}
 	if len(paths) != len(want) {
 		t.Fatalf("ConfigPaths() = %v, want %v", paths, want)
@@ -94,6 +97,10 @@ func TestLoadSearchesXDGConfigDirs(t *testing.T) {
 		os.MkdirAll(filepath.Dir(p), 0o700)
 		os.WriteFile(p, []byte("server:\n  port: "+port+"\n"), 0o600)
 	}
+	write(want[3], "9003")
+	if cfg, path, _ := Load(); path != want[3] || cfg.Server.Port != 9003 {
+		t.Errorf("Expected %s, got %s (port %d)", want[3], path, cfg.Server.Port)
+	}
 	write(want[2], "9002")
 	if cfg, path, _ := Load(); path != want[2] || cfg.Server.Port != 9002 {
 		t.Errorf("Expected %s, got %s (port %d)", want[2], path, cfg.Server.Port)
@@ -117,6 +124,8 @@ func TestStrayFiles(t *testing.T) {
 	t.Chdir(tmp)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(tmp, "data"))
+	t.Setenv("XDG_CONFIG_DIRS", filepath.Join(tmp, "xdg"))
+	setSystemConfigDir(t, filepath.Join(tmp, "system"))
 
 	cfg, err := defaults()
 	if err != nil {
@@ -139,4 +148,43 @@ func TestStrayFiles(t *testing.T) {
 	if msgs := cfg.StrayFiles("config.yaml"); len(msgs) != 0 {
 		t.Errorf("Expected no warnings, got %v", msgs)
 	}
+}
+
+func TestStrayFilesShadowedConfig(t *testing.T) {
+	tmp := t.TempDir()
+	t.Chdir(tmp)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmp, "data"))
+	t.Setenv("XDG_CONFIG_DIRS", filepath.Join(tmp, "xdg"))
+	setSystemConfigDir(t, filepath.Join(tmp, "system"))
+
+	legacy := filepath.Join(tmp, "xdg", "update-api", "config.yaml")
+	system := filepath.Join(tmp, "system", "config.yaml")
+	for _, p := range []string{legacy, system} {
+		os.MkdirAll(filepath.Dir(p), 0o700)
+		os.WriteFile(p, nil, 0o600)
+	}
+
+	// The /etc/xdg copy from v1.0.0 wins, so the new one is never read.
+	cfg, path, err := Load()
+	if err != nil || path != legacy {
+		t.Fatalf("Expected %s, got %s err %v", legacy, path, err)
+	}
+	msgs := cfg.StrayFiles(path)
+	if len(msgs) != 1 || !strings.Contains(msgs[0], system) {
+		t.Errorf("Expected a warning about %s, got %v", system, msgs)
+	}
+
+	os.Remove(legacy)
+	cfg, path, _ = Load()
+	if msgs := cfg.StrayFiles(path); path != system || len(msgs) != 0 {
+		t.Errorf("Expected %s with no warnings, got %s %v", system, path, msgs)
+	}
+}
+
+func setSystemConfigDir(t *testing.T, dir string) {
+	t.Helper()
+	old := systemConfigDir
+	systemConfigDir = dir
+	t.Cleanup(func() { systemConfigDir = old })
 }

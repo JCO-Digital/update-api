@@ -4,7 +4,16 @@ This guide explains how to deploy the API as a background service behind Nginx.
 
 ## 1. Systemd Service
 
-Create a service file at `/etc/systemd/system/update-api.service`:
+Build as your own user, then install the binaries to `/var/www/update-api/`, the unit to `/etc/systemd/system/` and `config.yaml.dist` to `/etc/update-api/config.yaml`:
+
+```bash
+make build
+sudo make install
+```
+
+`make install` doesn't build, so Go never runs as root, and it never overwrites an existing config. Override `INSTALL_DIR`, `SYSTEMD_DIR`, `CONFIG_DIR`, `CONFIG_GROUP` or `DESTDIR` to install elsewhere. If you change `INSTALL_DIR`, change `ExecStart` in the unit to match.
+
+The installed unit, `deployment/update-api.service`, is:
 
 ```ini
 [Unit]
@@ -30,13 +39,21 @@ WantedBy=multi-user.target
 
 The database, backups and license logs live in `/var/lib/update-api/`.
 
-Put the config in `/etc/xdg/update-api/config.yaml`. That is in the default XDG search path for every user, so the server and the CLI both find it without extra environment. It holds the admin API keys, so only root and the service user may read it:
+The config lives in `/etc/update-api/config.yaml`. The server and the CLI both look there, so neither needs extra environment. It holds the admin API keys, so only root and the service user may read it. `make install` sets that up; by hand it is:
 
 ```bash
-sudo mkdir -p /etc/xdg/update-api
-sudo cp config.yaml.dist /etc/xdg/update-api/config.yaml
-sudo chown root:www-data /etc/xdg/update-api/config.yaml
-sudo chmod 0640 /etc/xdg/update-api/config.yaml
+sudo install -d -m 0750 -o root -g www-data /etc/update-api
+sudo install -m 0640 -o root -g www-data config.yaml.dist /etc/update-api/config.yaml
+```
+
+### Upgrading from v1.0.0
+
+v1.0.0 used `/etc/xdg/update-api/config.yaml`. That location still works and is searched first, so move the file rather than copying it, or the old copy keeps winning (the server logs a warning when both exist):
+
+```bash
+sudo install -d -m 0750 -o root -g www-data /etc/update-api
+sudo mv /etc/xdg/update-api/config.yaml /etc/update-api/config.yaml
+sudo rmdir /etc/xdg/update-api
 ```
 
 The CLI doesn't get the unit's environment, so set the data paths in the config as well:

@@ -14,6 +14,10 @@ import (
 
 const appName = "update-api"
 
+// systemConfigDir is searched after the XDG config dirs. It is a variable so
+// tests can point it elsewhere.
+var systemConfigDir = "/etc/update-api"
+
 type Config struct {
 	Server struct {
 		Port   int    `yaml:"port"`
@@ -38,7 +42,7 @@ type Config struct {
 }
 
 // Load reads the config from $UPDATE_API_CONFIG if set, otherwise from the
-// first update-api/config.yaml in the XDG config directories. With no config
+// first config.yaml in ConfigPaths. With no config
 // file it returns the defaults, which have no admin API keys, and an empty
 // path.
 func Load() (*Config, string, error) {
@@ -67,7 +71,9 @@ func Load() (*Config, string, error) {
 
 // ConfigPaths lists where Load looks for config.yaml, most specific first:
 // $XDG_CONFIG_HOME (default ~/.config), then each of $XDG_CONFIG_DIRS
-// (default /etc/xdg).
+// (default /etc/xdg), then /etc/update-api. /etc/update-api is where a
+// system install keeps it; /etc/xdg is still searched because v1.0.0
+// documented it.
 func ConfigPaths() ([]string, error) {
 	home, err := xdgDir("XDG_CONFIG_HOME", ".config")
 	if err != nil {
@@ -85,7 +91,7 @@ func ConfigPaths() ([]string, error) {
 			paths = append(paths, filepath.Join(dir, appName, "config.yaml"))
 		}
 	}
-	return paths, nil
+	return append(paths, filepath.Join(systemConfigDir, "config.yaml")), nil
 }
 
 // DataDir is where the database, backups and license logs live unless the
@@ -150,8 +156,9 @@ func LoadConfig(path string) (*Config, error) {
 
 // StrayFiles describes files in the working directory where older versions
 // kept the config, database and license logs, when they are not the ones in
-// use. Starting on an empty database next to a full one looks like lost
-// data, so callers should log these.
+// use, and config files in ConfigPaths that the one in use shadows. Starting
+// on an empty database next to a full one, or editing a config that is never
+// read, looks like lost data, so callers should log these.
 func (c *Config) StrayFiles(configPath string) []string {
 	var msgs []string
 	check := func(legacy, inUse, what string) {
@@ -174,6 +181,20 @@ func (c *Config) StrayFiles(configPath string) []string {
 		}
 	}
 	check("config.yaml", wantConfig, "UPDATE_API_CONFIG")
+
+	// With no config in use, every path in ConfigPaths is missing.
+	if configPath != "" {
+		inUse, _ := filepath.Abs(configPath)
+		paths, _ := ConfigPaths()
+		for _, path := range paths {
+			if path == inUse {
+				continue
+			}
+			if _, err := os.Stat(path); err == nil {
+				msgs = append(msgs, fmt.Sprintf("%s exists but is not in use, %s is; remove one of them", path, configPath))
+			}
+		}
+	}
 	check("updates.db", c.Server.DBPath, "server.db_path")
 	check("licenses", c.Licenses.LogDir, "licenses.log_dir")
 	return msgs

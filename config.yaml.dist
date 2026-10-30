@@ -1,5 +1,5 @@
-# Copy to ~/.config/update-api/config.yaml, or /etc/xdg/update-api/config.yaml
-# for a system-wide install.
+# Copy to ~/.config/update-api/config.yaml, or /etc/update-api/config.yaml
+# for a system-wide install (make install does that).
 server:
   port: 8080
   # Defaults to $XDG_DATA_HOME/update-api/updates.db
