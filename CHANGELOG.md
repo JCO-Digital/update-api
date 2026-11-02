@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.0 (2026-11-02)
+
+#### Features
+
+- cli: add jcore-register-plugin to register a plugin over the API (0a31868)
+
+#### Continuous Integration
+
+- release: attach jcore-register-plugin binaries to GitHub releases (072555e)
+
 ## v1.1.0 (2026-10-30)
 
 #### Features
